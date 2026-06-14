@@ -25,6 +25,367 @@
 
 ## Question 1. What are foreign key constraints and what happens on `CASCADE` delete/update?
 
+# Foreign Key Constraints in MySQL
+
+A **Foreign Key (FK)** is a constraint used to enforce **referential integrity** between two tables.
+
+- The **parent table** contains the primary key (or unique key).
+- The **child table** contains the foreign key column that references the parent table.
+- MySQL ensures that a child row cannot reference a non-existent parent row.
+
+### Real-World Example
+
+Suppose you have:
+
+- `departments` table → stores department information.
+- `employees` table → stores employees and their department.
+
+Each employee must belong to a valid department.
+
+---
+
+## Creating a Foreign Key
+
+```sql
+CREATE DATABASE interview_db;
+USE interview_db;
+
+CREATE TABLE departments (
+    department_id INT PRIMARY KEY,
+    department_name VARCHAR(50)
+);
+
+CREATE TABLE employees (
+    employee_id INT PRIMARY KEY AUTO_INCREMENT,
+    employee_name VARCHAR(100),
+    department_id INT,
+
+    CONSTRAINT fk_department
+    FOREIGN KEY (department_id)
+    REFERENCES departments(department_id)
+);
+```
+
+### Explanation
+
+```sql
+FOREIGN KEY (department_id)
+```
+
+- Indicates that `department_id` in `employees` is a foreign key.
+
+```sql
+REFERENCES departments(department_id)
+```
+
+- References the primary key of the `departments` table.
+
+---
+
+## Sample Data
+
+```sql
+INSERT INTO departments VALUES
+(1, 'Engineering'),
+(2, 'HR');
+
+INSERT INTO employees (employee_name, department_id)
+VALUES
+('Alice', 1),
+('Bob', 1),
+('Charlie', 2);
+```
+
+Current Data:
+
+### departments
+
+| department_id | department_name |
+| ------------- | --------------- |
+| 1             | Engineering     |
+| 2             | HR              |
+
+### employees
+
+| employee_id | employee_name | department_id |
+| ----------- | ------------- | ------------- |
+| 1           | Alice         | 1             |
+| 2           | Bob           | 1             |
+| 3           | Charlie       | 2             |
+
+---
+
+# What Happens Without CASCADE?
+
+Suppose you try:
+
+```sql
+DELETE FROM departments
+WHERE department_id = 1;
+```
+
+MySQL returns an error:
+
+```text
+Cannot delete or update a parent row:
+a foreign key constraint fails
+```
+
+Why?
+
+Because employees Alice and Bob still reference department 1.
+
+This prevents orphan records.
+
+---
+
+# CASCADE DELETE
+
+`ON DELETE CASCADE` tells MySQL:
+
+> "When a parent row is deleted, automatically delete all related child rows."
+
+## Example
+
+```sql
+CREATE TABLE employees (
+    employee_id INT PRIMARY KEY AUTO_INCREMENT,
+    employee_name VARCHAR(100),
+    department_id INT,
+
+    FOREIGN KEY (department_id)
+    REFERENCES departments(department_id)
+    ON DELETE CASCADE
+);
+```
+
+---
+
+### Before Delete
+
+#### departments
+
+| department_id | department_name |
+| ------------- | --------------- |
+| 1             | Engineering     |
+| 2             | HR              |
+
+#### employees
+
+| employee_id | employee_name | department_id |
+| ----------- | ------------- | ------------- |
+| 1           | Alice         | 1             |
+| 2           | Bob           | 1             |
+| 3           | Charlie       | 2             |
+
+---
+
+### Delete Parent Row
+
+```sql
+DELETE FROM departments
+WHERE department_id = 1;
+```
+
+---
+
+### After Delete
+
+#### departments
+
+| department_id | department_name |
+| ------------- | --------------- |
+| 2             | HR              |
+
+#### employees
+
+| employee_id | employee_name | department_id |
+| ----------- | ------------- | ------------- |
+| 3           | Charlie       | 2             |
+
+Notice:
+
+- Engineering department deleted.
+- Alice and Bob automatically deleted.
+
+This is called **cascading delete**.
+
+---
+
+# CASCADE UPDATE
+
+`ON UPDATE CASCADE` tells MySQL:
+
+> "If the parent key changes, automatically update matching foreign keys in child tables."
+
+## Example
+
+```sql
+CREATE TABLE employees (
+    employee_id INT PRIMARY KEY AUTO_INCREMENT,
+    employee_name VARCHAR(100),
+    department_id INT,
+
+    FOREIGN KEY (department_id)
+    REFERENCES departments(department_id)
+    ON UPDATE CASCADE
+);
+```
+
+---
+
+### Parent Table
+
+```sql
+SELECT * FROM departments;
+```
+
+| department_id | department_name |
+| ------------- | --------------- |
+| 1             | Engineering     |
+
+---
+
+### Child Table
+
+| employee_id | employee_name | department_id |
+| ----------- | ------------- | ------------- |
+| 1           | Alice         | 1             |
+| 2           | Bob           | 1             |
+
+---
+
+### Update Parent Key
+
+```sql
+UPDATE departments
+SET department_id = 10
+WHERE department_id = 1;
+```
+
+---
+
+### Result
+
+#### departments
+
+| department_id | department_name |
+| ------------- | --------------- |
+| 10            | Engineering     |
+
+#### employees
+
+| employee_id | employee_name | department_id |
+| ----------- | ------------- | ------------- |
+| 1           | Alice         | 10            |
+| 2           | Bob           | 10            |
+
+The child rows are automatically updated.
+
+---
+
+# Complete Example with Both CASCADE Options
+
+```sql
+CREATE TABLE departments (
+    department_id INT PRIMARY KEY,
+    department_name VARCHAR(50)
+);
+
+CREATE TABLE employees (
+    employee_id INT PRIMARY KEY AUTO_INCREMENT,
+    employee_name VARCHAR(100),
+    department_id INT,
+
+    CONSTRAINT fk_department
+    FOREIGN KEY (department_id)
+    REFERENCES departments(department_id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+);
+```
+
+---
+
+# Other Foreign Key Actions in MySQL
+
+| Action        | Behavior                                         |
+| ------------- | ------------------------------------------------ |
+| `CASCADE`     | Automatically delete/update child rows           |
+| `RESTRICT`    | Prevent parent delete/update if child rows exist |
+| `NO ACTION`   | Same as RESTRICT in MySQL                        |
+| `SET NULL`    | Set child foreign key to NULL                    |
+| `SET DEFAULT` | Not supported by MySQL                           |
+
+Example:
+
+```sql
+FOREIGN KEY (department_id)
+REFERENCES departments(department_id)
+ON DELETE SET NULL
+```
+
+When a department is deleted:
+
+```text
+Alice -> department_id = NULL
+Bob   -> department_id = NULL
+```
+
+instead of deleting employee records.
+
+---
+
+# Performance Considerations
+
+### 1. Index Foreign Key Columns
+
+MySQL automatically requires an index on foreign key columns (InnoDB creates one if needed).
+
+```sql
+SHOW INDEX FROM employees;
+```
+
+---
+
+### 2. Be Careful with Large Cascades
+
+```sql
+DELETE FROM departments
+WHERE department_id = 1;
+```
+
+might delete:
+
+- Thousands of employees
+- Millions of orders
+- Related audit records
+
+A single delete can trigger a large chain of cascading operations.
+
+---
+
+### 3. Use EXPLAIN Before Large Deletes
+
+```sql
+EXPLAIN DELETE
+FROM departments
+WHERE department_id = 1;
+```
+
+This helps understand the execution plan before performing large operations.
+
+---
+
+# Interview Answer (Short Version)
+
+**Foreign Key Constraints** maintain referential integrity between parent and child tables by ensuring that child records reference valid parent records.
+
+- **ON DELETE CASCADE**: When a parent row is deleted, all matching child rows are automatically deleted.
+- **ON UPDATE CASCADE**: When a parent key value changes, all corresponding foreign key values in child tables are automatically updated.
+
+They are commonly used in relationships such as **Departments → Employees**, **Customers → Orders**, and **Orders → Order_Items** to keep data consistent.
+
 ## Question 2. What is the difference between `NOW()` and `CURRENT_TIMESTAMP()`?
 
 ## Question 3. How can you find duplicate records in a table?
