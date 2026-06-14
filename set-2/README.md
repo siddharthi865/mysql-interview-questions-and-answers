@@ -25,6 +25,405 @@
 
 ## Question 1. What are aggregate functions in MySQL? Name a few
 
+### What Are Aggregate Functions in MySQL?
+
+**Aggregate functions** in MySQL are functions that perform a calculation on **multiple rows of data** and return **a single result value**.
+
+They are commonly used with the `SELECT` statement to summarize data, such as calculating totals, averages, counts, minimums, and maximums.
+
+Think of aggregate functions as tools that answer questions like:
+
+- How many employees are there?
+- What is the average salary?
+- What is the highest salary?
+- What is the total payroll cost?
+
+---
+
+## Common Aggregate Functions in MySQL
+
+| Function           | Purpose                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `COUNT()`          | Counts rows                                                 |
+| `SUM()`            | Calculates total value                                      |
+| `AVG()`            | Calculates average value                                    |
+| `MIN()`            | Finds the smallest value                                    |
+| `MAX()`            | Finds the largest value                                     |
+| `GROUP_CONCAT()`   | Concatenates values from multiple rows into a single string |
+| `JSON_ARRAYAGG()`  | Aggregates values into a JSON array                         |
+| `JSON_OBJECTAGG()` | Aggregates key-value pairs into a JSON object               |
+
+According to the latest MySQL documentation, these functions are designed to operate on sets of rows and are frequently used with `GROUP BY` clauses.
+
+---
+
+## Sample Table
+
+```sql
+CREATE DATABASE interview_db;
+USE interview_db;
+
+CREATE TABLE employees (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    department VARCHAR(50),
+    salary DECIMAL(10,2),
+    hire_date DATE,
+    manager_id INT
+);
+
+INSERT INTO employees (name, department, salary, hire_date, manager_id) VALUES
+('Alice', 'Engineering', 75000, '2020-01-15', NULL),
+('Bob', 'Engineering', 80000, '2019-03-10', 1),
+('Charlie', 'HR', 60000, '2021-07-22', NULL);
+```
+
+---
+
+# 1. COUNT()
+
+Counts the number of rows.
+
+### Example
+
+```sql
+SELECT COUNT(*) AS total_employees
+FROM employees;
+```
+
+### Explanation
+
+- `COUNT(*)` counts every row in the table.
+- Returns:
+
+```text
+total_employees
+---------------
+3
+```
+
+### Variations
+
+```sql
+SELECT COUNT(manager_id)
+FROM employees;
+```
+
+Counts only non-NULL values in `manager_id`.
+
+---
+
+# 2. SUM()
+
+Calculates the total of numeric values.
+
+### Example
+
+```sql
+SELECT SUM(salary) AS total_salary
+FROM employees;
+```
+
+### Explanation
+
+```text
+75000 + 80000 + 60000 = 215000
+```
+
+Result:
+
+```text
+total_salary
+------------
+215000
+```
+
+---
+
+# 3. AVG()
+
+Calculates the average value.
+
+### Example
+
+```sql
+SELECT AVG(salary) AS avg_salary
+FROM employees;
+```
+
+### Explanation
+
+```text
+(75000 + 80000 + 60000) / 3
+= 71666.67
+```
+
+Result:
+
+```text
+avg_salary
+----------
+71666.67
+```
+
+---
+
+# 4. MIN()
+
+Returns the smallest value.
+
+### Example
+
+```sql
+SELECT MIN(salary) AS lowest_salary
+FROM employees;
+```
+
+Result:
+
+```text
+lowest_salary
+-------------
+60000
+```
+
+Employee:
+
+```text
+Charlie
+```
+
+---
+
+# 5. MAX()
+
+Returns the largest value.
+
+### Example
+
+```sql
+SELECT MAX(salary) AS highest_salary
+FROM employees;
+```
+
+Result:
+
+```text
+highest_salary
+--------------
+80000
+```
+
+Employee:
+
+```text
+Bob
+```
+
+---
+
+# Aggregate Functions with GROUP BY
+
+Aggregate functions become even more powerful when combined with `GROUP BY`.
+
+### Example: Department-wise Average Salary
+
+```sql
+SELECT
+    department,
+    AVG(salary) AS avg_salary
+FROM employees
+GROUP BY department;
+```
+
+### Execution
+
+Engineering:
+
+```text
+(75000 + 80000) / 2 = 77500
+```
+
+HR:
+
+```text
+60000
+```
+
+Output:
+
+```text
+department   avg_salary
+----------   ----------
+Engineering  77500
+HR           60000
+```
+
+---
+
+# GROUP_CONCAT()
+
+Combines multiple row values into a single string.
+
+### Example
+
+```sql
+SELECT
+    department,
+    GROUP_CONCAT(name) AS employees
+FROM employees
+GROUP BY department;
+```
+
+Output:
+
+```text
+Engineering   Alice,Bob
+HR            Charlie
+```
+
+Useful for reporting and dashboards.
+
+---
+
+# JSON Aggregation Functions (Modern MySQL)
+
+### JSON_ARRAYAGG()
+
+Creates a JSON array.
+
+```sql
+SELECT JSON_ARRAYAGG(name) AS employee_names
+FROM employees;
+```
+
+Output:
+
+```json
+["Alice", "Bob", "Charlie"]
+```
+
+---
+
+### JSON_OBJECTAGG()
+
+Creates a JSON object.
+
+```sql
+SELECT JSON_OBJECTAGG(id, name)
+FROM employees;
+```
+
+Output:
+
+```json
+{
+  "1": "Alice",
+  "2": "Bob",
+  "3": "Charlie"
+}
+```
+
+These are commonly used in modern APIs and microservices.
+
+---
+
+# Important Interview Points
+
+### 1. Aggregate Functions Ignore NULL Values
+
+Example:
+
+```sql
+SELECT AVG(manager_id)
+FROM employees;
+```
+
+`NULL` values are ignored during calculation.
+
+---
+
+### 2. COUNT(\*) vs COUNT(column)
+
+```sql
+COUNT(*)        -- Counts all rows
+COUNT(column)   -- Counts only non-NULL values
+```
+
+Example:
+
+```sql
+SELECT COUNT(*) FROM employees;
+SELECT COUNT(manager_id) FROM employees;
+```
+
+Output:
+
+```text
+3
+1
+```
+
+because only Bob has a non-NULL `manager_id`.
+
+---
+
+### 3. WHERE vs HAVING
+
+`WHERE` filters rows before aggregation.
+
+```sql
+SELECT AVG(salary)
+FROM employees
+WHERE department = 'Engineering';
+```
+
+`HAVING` filters groups after aggregation.
+
+```sql
+SELECT department, AVG(salary)
+FROM employees
+GROUP BY department
+HAVING AVG(salary) > 70000;
+```
+
+---
+
+# Performance Considerations
+
+### Use EXPLAIN
+
+```sql
+EXPLAIN
+SELECT department, AVG(salary)
+FROM employees
+GROUP BY department;
+```
+
+This helps identify:
+
+- Full table scans
+- Index usage
+- Temporary tables
+- Sorting operations
+
+### Optimization
+
+Create indexes on grouped columns:
+
+```sql
+CREATE INDEX idx_department
+ON employees(department);
+```
+
+This can improve `GROUP BY` performance significantly on large tables.
+
+---
+
+# Interview Answer (Short Version)
+
+**Aggregate functions in MySQL perform calculations on multiple rows and return a single summarized value. Common aggregate functions include `COUNT()`, `SUM()`, `AVG()`, `MIN()`, and `MAX()`. They are often used with `GROUP BY` to generate summaries such as department-wise totals, averages, or counts. Modern MySQL also provides aggregation functions like `GROUP_CONCAT()`, `JSON_ARRAYAGG()`, and `JSON_OBJECTAGG()`.**
+
 ## Question 2. How do you count the total number of records in a table?
 
 ## Question 3. What is the use of the `GROUP BY` clause?
