@@ -25,6 +25,320 @@
 
 ## Question 1. How do you update one table based on another table’s data?
 
+## Updating One Table Based on Another Table’s Data in MySQL
+
+### Interview Answer
+
+Updating one table based on another table's data is a very common operation in MySQL. It is typically done using an **`UPDATE` statement with a `JOIN`**.
+
+This allows you to:
+
+- Synchronize data between tables.
+- Copy values from one table to another.
+- Update records based on matching rows in another table.
+- Perform bulk updates efficiently without writing multiple queries.
+
+Unlike some other databases, **MySQL supports `UPDATE ... JOIN` directly**, making it straightforward to update one table using another table's values.
+
+---
+
+## Sample Schema
+
+```sql
+CREATE DATABASE interview_db;
+USE interview_db;
+
+CREATE TABLE employees (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    department VARCHAR(50),
+    salary DECIMAL(10,2),
+    hire_date DATE,
+    manager_id INT
+);
+
+INSERT INTO employees (name, department, salary, hire_date, manager_id)
+VALUES
+('Alice','Engineering',75000,'2020-01-15',NULL),
+('Bob','Engineering',80000,'2019-03-10',1),
+('Charlie','HR',60000,'2021-07-22',NULL);
+```
+
+Suppose we have another table containing revised salaries.
+
+```sql
+CREATE TABLE salary_updates (
+    employee_id INT,
+    new_salary DECIMAL(10,2)
+);
+
+INSERT INTO salary_updates
+VALUES
+(1, 78000),
+(2, 85000);
+```
+
+---
+
+# Method 1: UPDATE with INNER JOIN (Most Common)
+
+```sql
+UPDATE employees e
+JOIN salary_updates s
+ON e.id = s.employee_id
+SET e.salary = s.new_salary;
+```
+
+### Line-by-Line Explanation
+
+```sql
+UPDATE employees e
+```
+
+- Specifies the table to update.
+- `e` is an alias for `employees`.
+
+---
+
+```sql
+JOIN salary_updates s
+```
+
+- Joins the second table containing new values.
+
+---
+
+```sql
+ON e.id = s.employee_id
+```
+
+- Matches employees with their corresponding update record.
+
+---
+
+```sql
+SET e.salary = s.new_salary;
+```
+
+- Copies the salary from the second table into the first table.
+
+---
+
+## Before Update
+
+### employees
+
+| id  | name    | salary |
+| --- | ------- | ------ |
+| 1   | Alice   | 75000  |
+| 2   | Bob     | 80000  |
+| 3   | Charlie | 60000  |
+
+### salary_updates
+
+| employee_id | new_salary |
+| ----------- | ---------- |
+| 1           | 78000      |
+| 2           | 85000      |
+
+---
+
+## After Update
+
+| id  | name    | salary |
+| --- | ------- | ------ |
+| 1   | Alice   | 78000  |
+| 2   | Bob     | 85000  |
+| 3   | Charlie | 60000  |
+
+Charlie remains unchanged because there was no matching row.
+
+---
+
+# Method 2: Update Using Multiple Columns
+
+```sql
+UPDATE employees e
+JOIN employee_changes c
+ON e.id = c.employee_id
+SET
+    e.salary = c.salary,
+    e.department = c.department;
+```
+
+Multiple columns can be updated simultaneously.
+
+---
+
+# Method 3: Update Using a Subquery
+
+Sometimes a JOIN isn't necessary.
+
+Example:
+
+```sql
+UPDATE employees
+SET salary = (
+    SELECT MAX(new_salary)
+    FROM salary_updates
+    WHERE employee_id = employees.id
+)
+WHERE id IN (
+    SELECT employee_id
+    FROM salary_updates
+);
+```
+
+This works when the subquery returns **exactly one value** for each row.
+
+---
+
+# Method 4: Update Using a LEFT JOIN
+
+Suppose missing matches should retain their original value:
+
+```sql
+UPDATE employees e
+LEFT JOIN salary_updates s
+ON e.id = s.employee_id
+SET e.salary = IFNULL(s.new_salary, e.salary);
+```
+
+Here:
+
+- Matching rows receive the new salary.
+- Non-matching rows keep their existing salary.
+
+---
+
+# Real-World Example
+
+Suppose an HR department uploads a new salary sheet.
+
+Instead of updating employees one by one:
+
+```text
+employees
+          ▲
+          │
+          │ JOIN
+          ▼
+salary_updates
+```
+
+A single query updates thousands of employee records.
+
+This is much faster and less error-prone than executing individual `UPDATE` statements.
+
+---
+
+# Performance Considerations
+
+For large tables:
+
+### Create indexes on join columns
+
+```sql
+CREATE INDEX idx_employee_id
+ON salary_updates(employee_id);
+```
+
+Also ensure the target table's join column (`employees.id`) is indexed (it is, since it's the primary key).
+
+Without indexes, MySQL performs full table scans, making updates significantly slower.
+
+---
+
+# Use `EXPLAIN` to Analyze the Join
+
+Although `EXPLAIN` does not execute an `UPDATE`, it can be used with the equivalent `SELECT` to inspect the join plan:
+
+```sql
+EXPLAIN
+SELECT *
+FROM employees e
+JOIN salary_updates s
+ON e.id = s.employee_id;
+```
+
+Look for:
+
+- `type` (`ref`, `eq_ref`, etc.)
+- `possible_keys`
+- `key`
+- `rows`
+
+Efficient plans should use indexes on the join columns.
+
+---
+
+# Potential Pitfalls
+
+### 1. Missing JOIN Condition
+
+```sql
+UPDATE employees
+JOIN salary_updates
+SET salary = new_salary;
+```
+
+Without an `ON` clause, every row may be matched with every row, producing unintended results.
+
+---
+
+### 2. Duplicate Matching Rows
+
+If `salary_updates` contains multiple rows for the same employee, a target row can match more than once, leading to unpredictable updates. Ensure the join keys are unique or deduplicate the source data before updating.
+
+---
+
+### 3. Updating Too Many Rows
+
+Always preview the affected rows first:
+
+```sql
+SELECT *
+FROM employees e
+JOIN salary_updates s
+ON e.id = s.employee_id;
+```
+
+Once verified, execute the `UPDATE`.
+
+---
+
+# Optimization Tips
+
+- Index all join columns.
+- Update only required rows.
+- Test with a `SELECT` before running the `UPDATE`.
+- Run large updates inside a transaction when appropriate.
+
+Example:
+
+```sql
+START TRANSACTION;
+
+UPDATE employees e
+JOIN salary_updates s
+ON e.id = s.employee_id
+SET e.salary = s.new_salary;
+
+COMMIT;
+```
+
+If something goes wrong before committing:
+
+```sql
+ROLLBACK;
+```
+
+---
+
+# Interview Summary
+
+> In MySQL, the standard way to update one table based on another table is by using **`UPDATE ... JOIN`**. The target table is joined with the source table using a matching condition, and the `SET` clause assigns values from the source table to the target table. This approach is efficient for bulk updates, provided the join columns are properly indexed and each target row matches at most one source row. Always verify the join with a `SELECT` first and consider using transactions for large or critical updates.
+
 ## Question 2. How do you delete records from one table based on another table’s condition?
 
 ## Question 3. How do you swap values between two columns in a single query?
