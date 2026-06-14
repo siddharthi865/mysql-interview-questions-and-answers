@@ -25,6 +25,398 @@
 
 ## Question 1. What is the use of the `ANY` and `ALL` operators?
 
+## What is the use of the `ANY` and `ALL` operators in MySQL?
+
+### Definition
+
+`ANY` and `ALL` are **comparison operators** in MySQL that are used **with a subquery** to compare a value against **multiple values returned by the subquery**.
+
+- **`ANY`** → The condition is **TRUE if it matches at least one value** returned by the subquery.
+- **`ALL`** → The condition is **TRUE only if it matches every value** returned by the subquery.
+
+These operators are useful when comparing a single value with a set of values instead of writing multiple comparison conditions.
+
+---
+
+# Sample Database
+
+```sql
+CREATE DATABASE interview_db;
+USE interview_db;
+
+CREATE TABLE employees (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    department VARCHAR(50),
+    salary DECIMAL(10,2),
+    hire_date DATE,
+    manager_id INT
+);
+
+INSERT INTO employees (name, department, salary, hire_date, manager_id) VALUES
+('Alice', 'Engineering', 75000, '2020-01-15', NULL),
+('Bob', 'Engineering', 80000, '2019-03-10', 1),
+('Charlie', 'HR', 60000, '2021-07-22', NULL),
+('David', 'Sales', 55000, '2022-02-11', NULL),
+('Eva', 'Sales', 65000, '2020-05-20', 4);
+```
+
+---
+
+# 1. Using `ANY`
+
+### Example
+
+Find employees whose salary is **greater than at least one salary in the Sales department**.
+
+```sql
+SELECT name, salary
+FROM employees
+WHERE salary > ANY (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Sales'
+);
+```
+
+### Subquery Result
+
+```text
+55000
+65000
+```
+
+The condition becomes:
+
+```text
+salary > ANY (55000, 65000)
+```
+
+Equivalent to:
+
+```text
+salary > 55000
+OR
+salary > 65000
+```
+
+Since only **one comparison needs to be true**, the result includes:
+
+| Name    | Salary |
+| ------- | ------ |
+| Alice   | 75000  |
+| Bob     | 80000  |
+| Charlie | 60000  |
+| Eva     | 65000  |
+
+David (55000) is not included because `55000 > 55000` is false.
+
+---
+
+## Line-by-line Explanation
+
+```sql
+SELECT name, salary
+```
+
+Returns employee name and salary.
+
+```sql
+FROM employees
+```
+
+Reads data from the `employees` table.
+
+```sql
+WHERE salary > ANY (...)
+```
+
+Checks whether the salary is greater than **at least one** value returned by the subquery.
+
+```sql
+SELECT salary
+FROM employees
+WHERE department='Sales';
+```
+
+Returns:
+
+```text
+55000
+65000
+```
+
+---
+
+# 2. Using `ALL`
+
+### Example
+
+Find employees whose salary is **greater than every salary in the Sales department**.
+
+```sql
+SELECT name, salary
+FROM employees
+WHERE salary > ALL (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Sales'
+);
+```
+
+Subquery:
+
+```text
+55000
+65000
+```
+
+Condition becomes:
+
+```text
+salary > 55000
+AND
+salary > 65000
+```
+
+Only salaries greater than **65000** satisfy this condition.
+
+### Result
+
+| Name  | Salary |
+| ----- | ------ |
+| Alice | 75000  |
+| Bob   | 80000  |
+
+---
+
+# Another Example (`< ANY`)
+
+```sql
+SELECT name, salary
+FROM employees
+WHERE salary < ANY (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Engineering'
+);
+```
+
+Engineering salaries:
+
+```text
+75000
+80000
+```
+
+Condition:
+
+```text
+salary < 75000
+OR
+salary < 80000
+```
+
+Result:
+
+| Name    |
+| ------- |
+| Charlie |
+| David   |
+| Eva     |
+| Alice   |
+
+---
+
+# Another Example (`< ALL`)
+
+Find employees earning less than **every Engineering employee**.
+
+```sql
+SELECT name, salary
+FROM employees
+WHERE salary < ALL (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Engineering'
+);
+```
+
+Engineering salaries:
+
+```text
+75000
+80000
+```
+
+Condition:
+
+```text
+salary < 75000
+AND
+salary < 80000
+```
+
+Result:
+
+| Name    |
+| ------- |
+| Charlie |
+| David   |
+| Eva     |
+
+---
+
+# Difference Between `ANY` and `ALL`
+
+| Feature            | `ANY`                           | `ALL`                       |
+| ------------------ | ------------------------------- | --------------------------- |
+| Meaning            | Matches at least one value      | Matches every value         |
+| Logic              | OR                              | AND                         |
+| Easier to satisfy? | Yes                             | No                          |
+| Typical use        | Compare with one or more values | Compare with the entire set |
+
+---
+
+# How MySQL Evaluates Them
+
+Suppose the subquery returns:
+
+```text
+10
+20
+30
+```
+
+### `> ANY`
+
+```sql
+value > ANY (10,20,30)
+```
+
+Equivalent to:
+
+```text
+value > 10
+OR value > 20
+OR value > 30
+```
+
+---
+
+### `> ALL`
+
+```sql
+value > ALL (10,20,30)
+```
+
+Equivalent to:
+
+```text
+value > 10
+AND value > 20
+AND value > 30
+```
+
+---
+
+# Performance Considerations
+
+- `ANY` and `ALL` are typically used with **subqueries**.
+- If the subquery is **uncorrelated**, MySQL can evaluate it once and reuse the result.
+- Ensure columns used in the subquery's `WHERE` clause are indexed for better performance.
+- For simple comparisons against minimum or maximum values, using aggregate functions can be more readable:
+  - `x > ALL (subquery)` is often equivalent to `x > (SELECT MAX(...) FROM ...)`.
+  - `x > ANY (subquery)` is often equivalent to `x > (SELECT MIN(...) FROM ...)`.
+
+- Use `EXPLAIN` to inspect the execution plan and verify how MySQL executes the query.
+
+Example:
+
+```sql
+EXPLAIN
+SELECT name, salary
+FROM employees
+WHERE salary > ALL (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Sales'
+);
+```
+
+---
+
+# Common Pitfalls
+
+### 1. Empty Subquery Result
+
+If the subquery returns **no rows**:
+
+- `> ALL (empty set)` evaluates to **TRUE**.
+- `> ANY (empty set)` evaluates to **FALSE**.
+
+Example:
+
+```sql
+SELECT *
+FROM employees
+WHERE salary > ALL (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Marketing'
+);
+```
+
+If there are no employees in `Marketing`, the subquery returns an empty set, so the condition is true for all rows.
+
+### 2. `NULL` Values
+
+If the subquery returns `NULL` values, comparisons may evaluate to **UNKNOWN** due to SQL's three-valued logic. Filter out `NULL` values when appropriate:
+
+```sql
+SELECT name
+FROM employees
+WHERE salary > ALL (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Sales'
+      AND salary IS NOT NULL
+);
+```
+
+---
+
+# Interview Tip
+
+A common interview question is:
+
+> **What is the difference between `IN`, `ANY`, and `ALL`?**
+
+- `IN` checks whether a value **equals one of the values** returned by the subquery.
+- `ANY` compares a value using operators like `>`, `<`, `>=`, `<=`, `=`, or `<>` and succeeds if **at least one** comparison is true.
+- `ALL` compares using the same operators but succeeds only if **every** comparison is true.
+
+Example:
+
+```sql
+-- Equality check
+WHERE department IN ('HR', 'Sales')
+
+-- Comparison with at least one value
+WHERE salary > ANY (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Sales'
+)
+
+-- Comparison with all values
+WHERE salary > ALL (
+    SELECT salary
+    FROM employees
+    WHERE department = 'Sales'
+)
+```
+
 ## Question 2. What is the difference between `EXISTS` and `IN`?
 
 ## Question 3. How do you use `DISTINCT` with multiple columns?
