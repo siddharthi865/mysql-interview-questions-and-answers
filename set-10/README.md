@@ -25,6 +25,340 @@
 
 ## Question 1. How do you perform a full outer join in MySQL (since it’s not supported natively)?
 
+# How do you perform a FULL OUTER JOIN in MySQL (since it’s not supported natively)?
+
+## Interview Answer
+
+A **FULL OUTER JOIN** returns **all rows from both tables**:
+
+- Matching rows from both tables are combined.
+- Rows that exist **only in the left table** are included.
+- Rows that exist **only in the right table** are also included.
+- Missing values are filled with `NULL`.
+
+Unlike databases such as PostgreSQL, SQL Server, and Oracle, **MySQL does not provide a native `FULL OUTER JOIN` operator**. Instead, we simulate it by combining:
+
+1. a `LEFT JOIN`
+2. a `RIGHT JOIN`
+3. `UNION` (or `UNION ALL` with filtering)
+
+---
+
+## Sample Schema
+
+```sql
+CREATE DATABASE interview_db;
+USE interview_db;
+
+CREATE TABLE employees (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    department VARCHAR(50),
+    salary DECIMAL(10,2),
+    hire_date DATE,
+    manager_id INT
+);
+
+INSERT INTO employees (name, department, salary, hire_date, manager_id) VALUES
+('Alice', 'Engineering', 75000, '2020-01-15', NULL),
+('Bob', 'Engineering', 80000, '2019-03-10', 1),
+('Charlie', 'HR', 60000, '2021-07-22', NULL);
+
+CREATE TABLE departments (
+    department VARCHAR(50) PRIMARY KEY,
+    location VARCHAR(100)
+);
+
+INSERT INTO departments VALUES
+('Engineering', 'New York'),
+('Finance', 'London'),
+('Marketing', 'Chicago');
+```
+
+---
+
+# Data
+
+### employees
+
+| id  | name    | department  |
+| --- | ------- | ----------- |
+| 1   | Alice   | Engineering |
+| 2   | Bob     | Engineering |
+| 3   | Charlie | HR          |
+
+### departments
+
+| department  | location |
+| ----------- | -------- |
+| Engineering | New York |
+| Finance     | London   |
+| Marketing   | Chicago  |
+
+Notice:
+
+- **HR** exists only in `employees`.
+- **Finance** and **Marketing** exist only in `departments`.
+
+A FULL OUTER JOIN should return **all four departments**.
+
+---
+
+# Method 1 (Most Common): LEFT JOIN + RIGHT JOIN + UNION
+
+```sql
+SELECT
+    e.name,
+    e.department,
+    d.location
+FROM employees e
+LEFT JOIN departments d
+ON e.department = d.department
+
+UNION
+
+SELECT
+    e.name,
+    e.department,
+    d.location
+FROM employees e
+RIGHT JOIN departments d
+ON e.department = d.department;
+```
+
+---
+
+## Line-by-line Explanation
+
+### First query
+
+```sql
+SELECT ...
+FROM employees e
+LEFT JOIN departments d
+ON e.department = d.department
+```
+
+Returns
+
+- All employees
+- Matching department if found
+- Otherwise NULL
+
+Result
+
+| Employee | Department  | Location |
+| -------- | ----------- | -------- |
+| Alice    | Engineering | New York |
+| Bob      | Engineering | New York |
+| Charlie  | HR          | NULL     |
+
+---
+
+### Second query
+
+```sql
+RIGHT JOIN departments d
+```
+
+Returns
+
+- All departments
+- Matching employee if available
+
+Result
+
+| Employee | Department  | Location |
+| -------- | ----------- | -------- |
+| Alice    | Engineering | New York |
+| Bob      | Engineering | New York |
+| NULL     | NULL        | London   |
+| NULL     | NULL        | Chicago  |
+
+---
+
+### UNION
+
+`UNION` removes duplicate matching rows.
+
+Final output
+
+| Employee | Department  | Location |
+| -------- | ----------- | -------- |
+| Alice    | Engineering | New York |
+| Bob      | Engineering | New York |
+| Charlie  | HR          | NULL     |
+| NULL     | Finance     | London   |
+| NULL     | Marketing   | Chicago  |
+
+This is equivalent to a FULL OUTER JOIN.
+
+---
+
+# Method 2 (Recommended for Large Tables): LEFT JOIN + UNION ALL
+
+Using `UNION` forces MySQL to remove duplicates, which requires sorting or hashing and can be slower on large datasets.
+
+A more efficient approach is:
+
+```sql
+SELECT
+    e.name,
+    e.department,
+    d.location
+FROM employees e
+LEFT JOIN departments d
+ON e.department = d.department
+
+UNION ALL
+
+SELECT
+    e.name,
+    e.department,
+    d.location
+FROM employees e
+RIGHT JOIN departments d
+ON e.department = d.department
+WHERE e.department IS NULL;
+```
+
+---
+
+## Why `WHERE e.department IS NULL`?
+
+The second query returns only the rows that were **not already returned** by the first `LEFT JOIN`.
+
+So:
+
+- matching rows are skipped
+- only right-only rows remain
+
+This avoids duplicate elimination while producing the same result.
+
+---
+
+# Visual Representation
+
+```
+Employees                Departments
+
+Engineering   ●────────────● Engineering
+HR            ●
+                         ● Finance
+                         ● Marketing
+```
+
+FULL OUTER JOIN returns:
+
+```
+Engineering  ✓
+HR           ✓
+Finance      ✓
+Marketing    ✓
+```
+
+---
+
+# UNION vs UNION ALL
+
+| UNION                      | UNION ALL                                                             |
+| -------------------------- | --------------------------------------------------------------------- |
+| Removes duplicates         | Keeps duplicates                                                      |
+| Requires sorting/hash step | No duplicate removal                                                  |
+| Usually slower             | Usually faster                                                        |
+| Simpler query              | Needs filtering (`WHERE ... IS NULL`) when simulating FULL OUTER JOIN |
+
+---
+
+# Performance Considerations
+
+For large tables:
+
+- `UNION ALL` is generally faster than `UNION` because it avoids duplicate elimination.
+- Ensure indexes exist on the join columns (for example, `department`) to improve join performance.
+- Use `EXPLAIN` to verify the execution plan and confirm that indexes are being used.
+
+Example:
+
+```sql
+EXPLAIN
+SELECT
+    e.name,
+    e.department,
+    d.location
+FROM employees e
+LEFT JOIN departments d
+ON e.department = d.department
+
+UNION ALL
+
+SELECT
+    e.name,
+    e.department,
+    d.location
+FROM employees e
+RIGHT JOIN departments d
+ON e.department = d.department
+WHERE e.department IS NULL;
+```
+
+---
+
+# Common Pitfalls
+
+### 1. Assuming MySQL supports `FULL OUTER JOIN`
+
+This is incorrect:
+
+```sql
+SELECT *
+FROM employees
+FULL OUTER JOIN departments;
+```
+
+MySQL will return a syntax error because `FULL OUTER JOIN` is not supported.
+
+---
+
+### 2. Using `UNION ALL` without filtering
+
+```sql
+LEFT JOIN
+UNION ALL
+RIGHT JOIN
+```
+
+This duplicates all matching rows.
+
+Always filter the second query:
+
+```sql
+WHERE e.department IS NULL
+```
+
+---
+
+### 3. Forgetting indexes
+
+Without indexes on the join columns, MySQL may perform full table scans, which can significantly degrade performance on large tables.
+
+---
+
+# Real-World Use Cases
+
+- Comparing customers and orders (including customers without orders and orders without matching customers)
+- Data reconciliation between two systems
+- ETL validation and migration checks
+- Auditing records across two databases
+
+---
+
+# Interview Tip
+
+If asked, **"Does MySQL support FULL OUTER JOIN?"**, a strong answer is:
+
+> "No. MySQL doesn't support `FULL OUTER JOIN` natively. The standard workaround is to combine a `LEFT JOIN` and a `RIGHT JOIN` using `UNION`, or preferably `UNION ALL` with a filter on unmatched rows to avoid the overhead of duplicate elimination. This approach reproduces the behavior of a FULL OUTER JOIN."
+
 ## Question 2. What is a recursive CTE (Common Table Expression)?
 
 ## Question 3. How do you write a recursive query using `WITH RECURSIVE`?
